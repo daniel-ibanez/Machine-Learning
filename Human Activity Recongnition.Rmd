@@ -1,0 +1,136 @@
+---
+title: "Human Activity Recognition"
+author: "Daniel Ibanez"
+date: "Sunday, September 27, 2015"
+output:
+  html_document:
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 12
+    highlight: textmate
+    theme: united
+  pdf_document:
+    highlight: zenburn
+  word_document:
+    fig_height: 6
+    fig_width: 8
+---
+
+## Executive Summary
+
+Through the use of Predictive Machine Learning techniques, in this document we will use the data from [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har) and try to establish a predictive tool for wearable obtained data to establish the possible outcome of a specific type of weightlifting exercise. 
+
+After some simple Exploratory Data Analysis and subsequent Data Cleaning, the dataset was split into training and testing subsets. Using `caret` and its `train` function we were able to easily obtain a good predictive model and test it both with the training data (`In Sample`) sample and also a test data (`Out of Sample`) sample with a very good projected accuracy.
+
+The resulting model was finally validated with 20 predictions that were uploaded to the Coursera platform.
+
+```{r, echo=FALSE,  message=F, warning=F}
+library(caret)
+library(rattle)
+library(rpart)
+set.seed(3141)
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+## Exploratory Data Analysis and Cleaning
+
+The training dataset consisted of 19622 observation with 160 variables.
+
+```{r}
+trainURL = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainRaw = read.csv(trainURL)
+```
+
+After some exploratory analysis, the first conclusion was that the dataset contained sequential register in the form of and index and a time stamp that were irrelevant for our purposes of predicting on a single observation. We proceeded to remove those columns.
+
+```{r}
+# Eliminate X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+indexCols = c(1,3,4,5,6,7)
+trainClean = trainRaw[-indexCols]
+```
+
+Furthermore, it was evident that many for the variables were not being reported for all of the observations and actually not reported at all in the observation that we would have to predict. We excluded those columns from our training dataset.
+
+```{r}
+nonVariables = "^kurtosis|^skewness|^amplitude|^var|^avg|^stddev|^max|^min"
+nonVariablesCols = grep(nonVariables, names(trainClean))
+trainClean = trainClean[-nonVariablesCols]
+```
+
+To try and further optimize the dataset for training, we ran a Near Zero Variance analysis to try and identify other variables that might be of no relevance. However, none were found.
+
+```{r}
+zeroVar = nearZeroVar(trainClean)
+zeroVar
+```
+
+## Model Selection and Training
+
+Based on the expected type of the outcome (factorial) we chose to train our model based on a Random Forest method. To evaluate our model, we first split the available dataset into a training and testing subset in order to be able to do Out of Sample testing. Since the Random Forest method requires implicit testing, we chose to split the dataset 75% for training and 25 for Out of Sample testing.
+
+```{r}
+inTrain = createDataPartition(trainClean$classe, p=0.75, list=FALSE)
+training = trainClean[inTrain,]
+testing = trainClean[-inTrain,]
+```
+
+Next, we ran the `train` function from caret for a Random Forest Model.
+
+```{r}
+Sys.time()
+modelFit = train(classe~.,data=training, method="rf")
+Sys.time()
+```
+
+This was the resulting model:
+
+```{r, echo=FALSE}
+modelFit
+```
+
+## Cross Validation
+
+The process of defining a Random Forest model has an implicit validation within the sample on which it was trained. The resulting confusion matrix was:
+
+```{r}
+predTraining=predict(modelFit, training)
+confusionMatrix(training$classe, predTraining)
+```
+
+To allow for Out of Sample testing and see its confusion matrix, we use the subset that we allocated for it and first predict the results:
+
+```{r}
+predTesting=predict(modelFit, testing)
+confusionMatrix(testing$classe, predTesting)
+```
+
+## Prediction (Validation)
+
+We conclude by using the model to predict (and validate through Coursera) the outcome for 20 cases. For this, we must load the data and clean it under the same conditions as the training dataset.
+
+```{r}
+validateURL = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+validateRaw = read.csv(validateURL)
+# Eliminate X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+indexCols = c(1,3,4,5,6,7)
+validateClean = validateRaw[-indexCols]
+# Eliminate columns with no data
+validateClean = validateClean[-nonVariablesCols]
+```
+
+Now we run our prediction model and save the results with the function provided in Coursera:
+
+```{r}
+validatePred = predict(modelFit, validateClean)
+validatePred
+pml_write_files(validatePred)
+```
+
+
+
